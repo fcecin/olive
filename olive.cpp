@@ -30,9 +30,16 @@ void token::create( name   issuer,
     });
 }
 
-
+ 
 void token::issue( name to, asset quantity, string memo )
 {
+  // issue() is not necessary in the olive system.
+  // control of the contract account is sufficient to endorse any number of initial members
+  //   and boot them up with arbitrary scores.
+  //
+  // this is only enabled for testing.
+  
+  /*
     auto sym = quantity.symbol;
     check( sym.is_valid(), "invalid symbol name" );
     check( memo.size() <= 256, "memo has more than 256 bytes" );
@@ -60,6 +67,7 @@ void token::issue( name to, asset quantity, string memo )
                           { st.issuer, to, quantity, memo }
       );
     }
+  */
 }
 
 void token::retire( asset quantity, string memo )
