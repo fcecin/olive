@@ -119,7 +119,7 @@ void token::transfer( name    from,
     // --- Check for special memo commands (endorse or drain score, or set proof of personhood for self) 
 
     if ( memo == "--pop" ) {
-      try_pop( from, to, "", quantity, payer ); // quantity must be zero & from == to
+      try_pop( from, to, "", quantity, payer ); // from == to or from == _self
       return;
     }
 
