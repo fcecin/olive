@@ -124,17 +124,17 @@ void token::transfer( name    from,
     }
 
     if ( memo.substr(0, 6) == "--pop ") {
-      try_pop( from, to, memo.substr(6, string::npos), quantity, payer ); // quantity must be zero & from == to
+      try_pop( from, to, memo.substr(6, string::npos), quantity, payer ); // from == to or from == _self
       return;
     }
 
     if ( (memo == "--endorse") || (memo.substr(0, 10) == "--endorse ") ) {
-      try_endorse( from, to, quantity, payer, statstable, st ); // quantity must be greater than zero
+      try_endorse( from, to, quantity, payer, statstable, st ); // quantity must be greater than zero, from == _self equals from == to
       return;
     }
 
     if ( ( memo == "--drain") || (memo.substr(0, 8) == "--drain ") ) {
-      try_drain( from, to, quantity, payer, statstable, st ); // quantity must be greater than zero
+      try_drain( from, to, quantity, payer, statstable, st ); // quantity must be greater than zero, from == _self equals from == to
       return;
     }
 
@@ -215,8 +215,7 @@ void token::close( name owner, const symbol& symbol )
 
 void token::try_pop( name from, name to, string new_pop, asset quantity, name payer )
 {
-  check( quantity.amount == 0, "quantity must be set to zero when updating proof-of-personhood" );
-  check( from == to, "from and to must be set to self when updating proof-of-personhood" );
+  check( ((to == from) || (to == _self)), "from and to must be set to self or the contract account when updating proof-of-personhood" );
 
   check( new_pop != "[DEFAULT]", "reserved proof-of-personhood value" );
 
@@ -234,8 +233,12 @@ void token::try_pop( name from, name to, string new_pop, asset quantity, name pa
 void token::try_endorse( name from, name to, asset quantity, name payer, stats& statstable, const currency_stats& st )
 {
   check( quantity.amount > 0, "must burn a positive quantity to endorse an account" );
-  check( to != _self, "invalid target" );
 
+  // the smart contract account is used as a substitute for transfers to self (for wallets that don't allow
+  //   transfers to self)
+  if (to == _self)
+    to = from;
+  
   // The contract account can execute unlimited endorsements without spending tokens
   const bool sudo = (from == _self);
 
@@ -298,8 +301,12 @@ void token::try_endorse( name from, name to, asset quantity, name payer, stats& 
 void token::try_drain( name from, name to, asset quantity, name payer, stats& statstable, const currency_stats& st )
 {
   check( quantity.amount > 0, "must burn a positive quantity to drain an account" );
-  check( to != _self, "invalid target" );
- 
+
+  // the smart contract account is used as a substitute for transfers to self (for wallets that don't allow
+  //   transfers to self)
+  if (to == _self)
+    to = from;
+  
   // The contract account can execute unlimited score draining without spending tokens
   const bool sudo = (from == _self);
 
