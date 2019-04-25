@@ -67,6 +67,30 @@ namespace eosio {
          using transfer_action = eosio::action_wrapper<"transfer"_n, &token::transfer>;
          using open_action = eosio::action_wrapper<"open"_n, &token::open>;
          using close_action = eosio::action_wrapper<"close"_n, &token::close>;
+
+         // ---- Olive extensions
+	 
+         [[eosio::action]]
+         void endorse( name    from,
+                       name    to,
+                       asset   quantity,
+                       string  memo );
+
+         [[eosio::action]]
+         void drain( name    from,
+                     name    to,
+                     asset   quantity,
+                     string  memo );
+
+	 // NOTE: This action is hard-coded for the "OLIVE" token symbol.
+         [[eosio::action]]
+         void setpop( name    owner,
+                      string  pop );
+
+         using endorse_action = eosio::action_wrapper<"endorse"_n, &token::endorse>;
+         using drain_action = eosio::action_wrapper<"drain"_n, &token::drain>;
+         using setpop_action = eosio::action_wrapper<"setpop"_n, &token::setpop>;
+
       private:
          struct [[eosio::table]] account {
             asset    balance;

@@ -213,6 +213,67 @@ void token::close( name owner, const symbol& symbol )
    prns.erase( itx );
 }
 
+void token::endorse( name from, name to, asset quantity, string memo )
+{
+  require_auth( from );
+  check( is_account( to ), "to account does not exist");
+  auto sym = quantity.symbol.code();
+  stats statstable( _self, sym.raw() );
+  const auto& st = statstable.get( sym.raw() );
+
+  require_recipient( from );
+  require_recipient( to );
+
+  check( quantity.is_valid(), "invalid quantity" );
+  check( quantity.symbol == st.supply.symbol, "symbol precision mismatch" );
+  check( memo.size() <= 256, "memo has more than 256 bytes" );
+
+  auto payer = has_auth( to ) ? to : from;
+
+  try_endorse( from, to, quantity, payer, statstable, st );
+}
+
+void token::drain( name from, name to, asset quantity, string memo )
+{
+  require_auth( from );
+  check( is_account( to ), "to account does not exist");
+  auto sym = quantity.symbol.code();
+  stats statstable( _self, sym.raw() );
+  const auto& st = statstable.get( sym.raw() );
+
+  require_recipient( from );
+  require_recipient( to );
+
+  check( quantity.is_valid(), "invalid quantity" );
+  check( quantity.symbol == st.supply.symbol, "symbol precision mismatch" );
+  check( memo.size() <= 256, "memo has more than 256 bytes" );
+
+  auto payer = has_auth( to ) ? to : from;
+
+  try_drain( from, to, quantity, payer, statstable, st );
+}
+
+// NOTE: This action is hard-coded for the "OLIVE" token symbol.
+// Having users enter a "4,OLIVE" symbol parameter is error-prone and pointless.
+void token::setpop( name owner, string pop )
+{
+  check( pop != "[DEFAULT]", "reserved proof-of-personhood value" );
+
+  require_auth( owner );
+  require_recipient( owner );
+  
+  // Locate the person record (if not found, this account doesn't claim to belong to an unique person)
+  const uint64_t symbol_code_raw = 297800387663;  // The OLIVE token
+  persons from_prns( _self, owner.value );
+  auto itx = from_prns.find( symbol_code_raw );
+  check( itx != from_prns.end(), "this account has not been endorsed yet" );
+
+  // Update person record (note: "owner" is the RAM payer for the new pop string)
+  from_prns.modify( *itx, owner, [&]( auto& a ) {
+      a.pop = pop;
+    });
+}
+
 void token::try_pop( name from, name to, string new_pop, asset quantity, name payer )
 {
   check( ((to == from) || (to == _self)), "from and to must be set to self or the contract account when updating proof-of-personhood" );
@@ -224,7 +285,7 @@ void token::try_pop( name from, name to, string new_pop, asset quantity, name pa
   auto itx = from_prns.find( quantity.symbol.code().raw() );
   check( itx != from_prns.end(), "this account has not been endorsed yet" );
 
-  // Update person record
+  // Update person record (note: "payer" is probably "from", i.e. the user will pay the RAM for their own pop string)
   from_prns.modify( *itx, payer, [&]( auto& a ) {
       a.pop = new_pop;
     });
@@ -466,4 +527,4 @@ string token::days_to_string( int64_t days )
 
 } /// namespace eosio
 
-EOSIO_DISPATCH( eosio::token, (create)(issue)(transfer)(open)(close)(retire) )
+EOSIO_DISPATCH( eosio::token, (create)(issue)(transfer)(open)(close)(retire)(endorse)(drain)(setpop) )
