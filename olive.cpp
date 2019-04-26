@@ -323,10 +323,24 @@ void token::try_endorse( name from, name to, asset quantity, name payer, stats& 
   persons to_prns( _self, to.value );
   auto to_itx = to_prns.find( quantity.symbol.code().raw() );
   if (to_itx == to_prns.end()) {
+
+    // This is the first endorsement, so a fee of 1.0000 token, which is burned, applies. 
+    // This requires that the endorsement quantity be greater than 1.0000 token instead of greater than zero.
+    uint64_t raw_first_endorsement_fee = first_endorsement_fee * get_precision_multiplier(quantity.symbol);
+
+    if (! sudo) {
+      check( quantity.amount > raw_first_endorsement_fee, "first endorsement quantity must be greater than the first endorsement fee");
+    }
+    
     // Not found, so create it by paying for its RAM and init the score to the endorsement amount
     to_prns.emplace( payer, [&]( auto& a ){
       a.symbol_code_raw = quantity.symbol.code().raw();
       a.score = quantity.amount;
+
+      if (! sudo) {
+	a.score -= raw_first_endorsement_fee; // deduct the first endorsement fee
+      }
+      
       a.last_claim_day = get_today() + 1; // 2-day waiting period before "to" can claim UBI
       a.pop = "[DEFAULT]";
     });

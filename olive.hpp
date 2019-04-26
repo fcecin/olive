@@ -152,7 +152,9 @@ namespace eosio {
 
 	 static const int64_t max_past_claim_days = 360;
 
-	 static const int64_t endorse_minimum_score = 10;
+	 static const int64_t endorse_minimum_score = 10; // in whole units of the currency (so 10 0000)
+
+	 static const int64_t first_endorsement_fee = 1; // in whole units of the currency (so 1 0000)
    };
 
 } /// namespace eosio
