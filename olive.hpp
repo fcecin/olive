@@ -127,13 +127,13 @@ namespace eosio {
 
 	 typedef eosio::multi_index< "persons"_n, person > persons;
 
-	 void try_pop( name from, name to, string new_pop, asset quantity, name payer );
+	 void try_pop( name from, name to, string new_pop, asset quantity );
 
 	 void try_endorse( name from, name to, asset quantity, name payer, stats& statstable, const currency_stats& st );
 
-	 void try_drain( name from, name to, asset quantity, name payer, stats& statstable, const currency_stats& st );
+	 void try_drain( name from, name to, asset quantity, stats& statstable, const currency_stats& st );
 
-	 void try_ubi_claim( name from, const symbol& sym, name payer, stats& statstable, const currency_stats& st );
+	 void try_ubi_claim( name from, const symbol& sym, stats& statstable, const currency_stats& st, bool silent );
 
 	 void log_claim( name claimant, asset claim_quantity, int32_t cur_score, time_type next_last_claim_day, time_type lost_days );
 	 

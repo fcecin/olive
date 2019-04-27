@@ -114,17 +114,18 @@ void token::transfer( name    from,
     check( quantity.symbol == st.supply.symbol, "symbol precision mismatch" );
     check( memo.size() <= 256, "memo has more than 256 bytes" );
 
+    // usually, payer == from
     auto payer = has_auth( to ) ? to : from;
 
     // --- Check for special memo commands (endorse or drain score, or set proof of personhood for self) 
 
     if ( memo == "--pop" ) {
-      try_pop( from, to, "", quantity, payer ); // from == to or from == _self
+      try_pop( from, to, "", quantity ); // from == to or from == _self
       return;
     }
 
     if ( memo.substr(0, 6) == "--pop ") {
-      try_pop( from, to, memo.substr(6, string::npos), quantity, payer ); // from == to or from == _self
+      try_pop( from, to, memo.substr(6, string::npos), quantity ); // from == to or from == _self
       return;
     }
 
@@ -134,7 +135,7 @@ void token::transfer( name    from,
     }
 
     if ( ( memo == "--drain") || (memo.substr(0, 8) == "--drain ") ) {
-      try_drain( from, to, quantity, payer, statstable, st ); // quantity must be greater than zero, from == _self equals from == to
+      try_drain( from, to, quantity, statstable, st ); // quantity must be greater than zero, from == _self equals from == to
       return;
     }
 
@@ -146,9 +147,9 @@ void token::transfer( name    from,
     if (from == to)
       return;
 
-    // Check for an UBI claim.
-    try_ubi_claim( from, quantity.symbol, payer, statstable, st );
-    
+    // Check for an UBI claim. ("same_payer" for everything)
+    try_ubi_claim( from, quantity.symbol, statstable, st, false );
+
     sub_balance( from, quantity );
     add_balance( to, quantity, payer );
 }
@@ -228,6 +229,7 @@ void token::endorse( name from, name to, asset quantity, string memo )
   check( quantity.symbol == st.supply.symbol, "symbol precision mismatch" );
   check( memo.size() <= 256, "memo has more than 256 bytes" );
 
+  // usually, payer == from
   auto payer = has_auth( to ) ? to : from;
 
   try_endorse( from, to, quantity, payer, statstable, st );
@@ -248,9 +250,7 @@ void token::drain( name from, name to, asset quantity, string memo )
   check( quantity.symbol == st.supply.symbol, "symbol precision mismatch" );
   check( memo.size() <= 256, "memo has more than 256 bytes" );
 
-  auto payer = has_auth( to ) ? to : from;
-
-  try_drain( from, to, quantity, payer, statstable, st );
+  try_drain( from, to, quantity, statstable, st );
 }
 
 // NOTE: This action is hard-coded for the "OLIVE" token symbol.
@@ -274,7 +274,7 @@ void token::setpop( name owner, string pop )
     });
 }
 
-void token::try_pop( name from, name to, string new_pop, asset quantity, name payer )
+void token::try_pop( name from, name to, string new_pop, asset quantity )
 {
   check( ((to == from) || (to == _self)), "from and to must be set to self or the contract account when updating proof-of-personhood" );
 
@@ -285,8 +285,8 @@ void token::try_pop( name from, name to, string new_pop, asset quantity, name pa
   auto itx = from_prns.find( quantity.symbol.code().raw() );
   check( itx != from_prns.end(), "this account has not been endorsed yet" );
 
-  // Update person record (note: "payer" is probably "from", i.e. the user will pay the RAM for their own pop string)
-  from_prns.modify( *itx, payer, [&]( auto& a ) {
+  // Update person record (note: "from" is is the RAM payer for the new pop string)
+  from_prns.modify( *itx, from, [&]( auto& a ) {
       a.pop = new_pop;
     });
 }
@@ -340,7 +340,7 @@ void token::try_endorse( name from, name to, asset quantity, name payer, stats& 
       if (! sudo) {
 	a.score -= raw_first_endorsement_fee; // deduct the first endorsement fee
       }
-      
+
       a.last_claim_day = get_today() + 1; // 2-day waiting period before "to" can claim UBI
       a.pop = "[DEFAULT]";
     });
@@ -357,9 +357,20 @@ void token::try_endorse( name from, name to, asset quantity, name payer, stats& 
         });
     }
   } else {
+    const auto & to_person = *to_itx;
+
+    int32_t old_score = to_person.score;
+    int32_t new_score =
+      (int32_t) std::min( (int64_t) ( std::numeric_limits<int32_t>::max() ), (int64_t) ( to_person.score + quantity.amount ) );
+
     // Found, so increase the score by the endorsement amount
-    to_prns.modify( *to_itx, payer, [&]( auto& a ) {
-        a.score = (int32_t) std::min( (int64_t) ( std::numeric_limits<int32_t>::max() ), (int64_t) ( a.score + quantity.amount ) );
+    to_prns.modify( to_person, same_payer, [&]( auto& a ) {
+        a.score = new_score;
+	if ( (old_score <= 0) && (new_score > 0) ) {
+	  // Account "to" is restarting its UBI clock after being denied for some time.
+	  // The last_claim_day cannot decrease, but today's UBI can be allowed.
+	  a.last_claim_day = (time_type) std::max( (time_type) ( get_today() - 1 ), a.last_claim_day );
+	}
       });
   }
 
@@ -373,7 +384,7 @@ void token::try_endorse( name from, name to, asset quantity, name payer, stats& 
   }
 }
 
-void token::try_drain( name from, name to, asset quantity, name payer, stats& statstable, const currency_stats& st )
+void token::try_drain( name from, name to, asset quantity, stats& statstable, const currency_stats& st )
 {
   check( quantity.amount > 0, "must burn a positive quantity to drain an account" );
 
@@ -406,10 +417,23 @@ void token::try_drain( name from, name to, asset quantity, name payer, stats& st
   auto to_itx = to_prns.find( quantity.symbol.code().raw() );
   check( to_itx != to_prns.end(), "to account has not been endorsed yet" );
 
-  // Subtract score from to
-  to_prns.modify( *to_itx, payer, [&]( auto& a ) {
-      a.score = (int32_t) std::max( (int64_t) ( std::numeric_limits<int32_t>::min() ), (int64_t) ( a.score - quantity.amount ) );
+  const auto & to_person = *to_itx;
+
+  int32_t old_score = to_person.score;
+  int32_t new_score =
+    (int32_t) std::max( (int64_t) ( std::numeric_limits<int32_t>::min() ), (int64_t) ( to_person.score - quantity.amount ) );
+
+  // Subtract score from to   
+  to_prns.modify( to_person, same_payer, [&]( auto& a ) {
+      a.score = new_score;
     });
+
+  if ( (old_score > 0) && (new_score <= 0) ) {
+    // Account will stop accruing UBI. The last_claim_date will be reset if/when the user's score
+    //   goes above zero again, so we have to claim any pending UBI that is owed right now.
+    // "same_payer" for all RAM involved.
+    try_ubi_claim( to, quantity.symbol, statstable, st, true );
+  }
 
   if (! sudo) {
     
@@ -421,7 +445,7 @@ void token::try_drain( name from, name to, asset quantity, name payer, stats& st
   }
 }
 
-void token::try_ubi_claim( name from, const symbol& sym, name payer, stats& statstable, const currency_stats& st )
+void token::try_ubi_claim( name from, const symbol& sym, stats& statstable, const currency_stats& st, bool silent )
 {
   // Locate the person record (if not found, this account doesn't claim to belong to an unique person)
   persons from_prns( _self, from.value );
@@ -432,7 +456,8 @@ void token::try_ubi_claim( name from, const symbol& sym, name payer, stats& stat
   const auto & from_person = *itx;
 
   // If the person has a zero or negative score, they can't claim UBI right now. (Silent failure)
-  if (from_person.score <= 0)
+  // EXCEPTION: The "silent" claim can happen after we have already drained the user's score below zero.
+  if ((from_person.score <= 0) && (! silent))
     return;
 
   // If the person has an empty or default pop they can't claim UBI right now. (Silent failure)
@@ -469,9 +494,14 @@ void token::try_ubi_claim( name from, const symbol& sym, name payer, stats& stat
     time_type last_claim_day_delta = lost_days + (claim_quantity.amount / precision_multiplier);
     
     if (claim_quantity.amount > 0) {
-      
-      // Log this basic income payment with a fake inline transfer action to self.
-      log_claim( from, claim_quantity, from_person.score, from_person.last_claim_day + last_claim_day_delta, lost_days );
+
+      // the "silent" claim is a special/rare case -- for when an account is being drained below
+      //   a score of zero by someone else, so we don't have the authorization to send the inline
+      //   action that logs this. 
+      if (! silent) {
+	// Log this basic income payment with a fake inline transfer action to self.
+	log_claim( from, claim_quantity, from_person.score, from_person.last_claim_day + last_claim_day_delta, lost_days );
+      }
       
       // Update the token total supply.
       statstable.modify( st, same_payer, [&]( auto& s ) {
@@ -480,12 +510,16 @@ void token::try_ubi_claim( name from, const symbol& sym, name payer, stats& stat
       
       // Finally, move the claim date window proportional to the amount of days of income we claimed
       //   (and also account for days of income that have been forever lost)
-      from_prns.modify( from_person, from, [&]( auto& a ) {
+      from_prns.modify( from_person, same_payer, [&]( auto& a ) {
 	  a.last_claim_day += last_claim_day_delta;
 	});
       
       // Pay the user doing the transfer ("from").
-      add_balance( from, claim_quantity, payer );
+      // "same_payer" here would fail if for some bizarre reason the "accounts" table entry for "from" is absent 
+      //   but the "persons" entry for "from" is present, which should not ever happen. But in case it does,
+      //   the whole action/transaction will fail miserably here and that can be fixed by simply calling open()
+      //   for the "from" account and then retrying whatever transaction we're in right now.
+      add_balance( from, claim_quantity, same_payer );
     }
   }
 }
