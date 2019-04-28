@@ -257,6 +257,7 @@ void token::drain( name from, name to, asset quantity, string memo )
 // Having users enter a "4,OLIVE" symbol parameter is error-prone and pointless.
 void token::setpop( name owner, string pop )
 {
+  check( pop.size() <= 256, "pop has more than 256 bytes" );
   check( pop != "[DEFAULT]", "reserved proof-of-personhood value" );
 
   require_auth( owner );
