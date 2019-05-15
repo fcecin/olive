@@ -528,11 +528,11 @@ void token::try_ubi_claim( name from, const symbol& sym, stats& statstable, cons
 // This calls a transfer-to-self just to log a memo that explains what the UBI payment was.
 void token::log_claim( name claimant, asset claim_quantity, int32_t cur_score, time_type next_last_claim_day, time_type lost_days )
 {
-  string claim_memo = "[UBI] +";
+  string claim_memo = "[UBI] ";
+  claim_memo.append( claimant.to_string() );
+  claim_memo.append( " +" );
   claim_memo.append( claim_quantity.to_string() );
-  claim_memo.append(" (score: " );
-  claim_memo.append( std::to_string( ((double)cur_score) / ((double)get_precision_multiplier(claim_quantity.symbol))) );
-  claim_memo.append(", next: " );
+  claim_memo.append( " (next: " );
   claim_memo.append( days_to_string(next_last_claim_day + 1) );
   claim_memo.append( ")" );
   if (lost_days > 0) {
@@ -541,9 +541,7 @@ void token::log_claim( name claimant, asset claim_quantity, int32_t cur_score, t
     claim_memo.append(" days of income)");
   }
 
-  SEND_INLINE_ACTION( *this, transfer, { {claimant, "active"_n} },
-		      { claimant, claimant, claim_quantity, claim_memo }
-  );
+  eosio::print( claim_memo );
 }
 
 // Input is days since epoch
